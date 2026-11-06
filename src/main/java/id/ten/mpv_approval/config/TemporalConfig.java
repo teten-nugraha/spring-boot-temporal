@@ -1,5 +1,9 @@
 package id.ten.mpv_approval.config;
 
+import id.ten.mpv_approval.repository.OrderRepository;
+import id.ten.mpv_approval.schedules.AutoReleaseActivitiesImpl;
+import id.ten.mpv_approval.temporal.AutoReleaseWorkflow;
+import id.ten.mpv_approval.temporal.AutoReleaseWorkflowImpl;
 import id.ten.mpv_approval.temporal.OrderActivitiesImpl;
 import id.ten.mpv_approval.temporal.OrderApprovalWorkflowImpl;
 import io.temporal.client.WorkflowClient;
@@ -29,13 +33,18 @@ public class TemporalConfig {
     }
 
     @Bean
-    public WorkerFactory workerFactory(WorkflowClient client, OrderActivitiesImpl orderActivities) {
+    public AutoReleaseActivitiesImpl autoReleaseActivities(OrderRepository orderRepository, WorkflowClient workflowClient) {
+        return new AutoReleaseActivitiesImpl(orderRepository, workflowClient);
+    }
+
+    @Bean
+    public WorkerFactory workerFactory(WorkflowClient client, OrderActivitiesImpl orderActivities, AutoReleaseActivitiesImpl autoReleaseActivities) {
         WorkerFactory factory = WorkerFactory.newInstance(client);
         Worker worker = factory.newWorker(TASK_QUEUE);
 
         // Daftarkan Workflow dan Activity
-        worker.registerWorkflowImplementationTypes(OrderApprovalWorkflowImpl.class);
-        worker.registerActivitiesImplementations(orderActivities);
+        worker.registerWorkflowImplementationTypes(OrderApprovalWorkflowImpl.class, AutoReleaseWorkflowImpl.class);
+        worker.registerActivitiesImplementations(orderActivities, autoReleaseActivities);
 
         return factory;
     }
