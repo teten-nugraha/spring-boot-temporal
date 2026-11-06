@@ -41,6 +41,10 @@ public class OrderApprovalWorkflowImpl implements OrderApprovalWorkflow {
     private ClaimRequest pendingClaimSignal = null;
     private ApprovalDecision pendingDecision = null;
 
+    // Flag pembatalan
+    private boolean isCancelled = false;
+    private String cancelReason = "";
+
     @Override
     public void processOrder(CreateRequest request) {
         this.orderId = request.orderId();
@@ -61,15 +65,25 @@ public class OrderApprovalWorkflowImpl implements OrderApprovalWorkflow {
 
         while (currentStepIndex < approvalChain.size()) {
             Role targetRole = approvalChain.get(currentStepIndex);
+
             this.currentClaim = null;
             this.pendingClaimSignal = null;
             this.pendingDecision = null;
 
             activities.updateWaitingState(orderId, currentStepIndex, targetRole);
 
+            // Loop menunggu aksi Pick Me, Decision, atau Pembatalan (Cancel)
             while (true) {
-                Workflow.await(() -> pendingClaimSignal != null || pendingDecision != null);
+                Workflow.await(() -> pendingClaimSignal != null || pendingDecision != null || isCancelled);
 
+                // 1. CEK JIKA ADA PEMBATALAN DARI REQUESTOR
+                if (isCancelled) {
+                    this.status = Status.CANCELLED;
+                    activities.finalizeStatus(orderId, Status.CANCELLED);
+                    return; // Menghentikan eksekusi workflow seketika
+                }
+
+                // 2. Proses Sinyal Pick Me / Release
                 if (pendingClaimSignal != null) {
                     if (pendingClaimSignal.role() == targetRole) {
                         if (pendingClaimSignal.release()) {
@@ -83,6 +97,7 @@ public class OrderApprovalWorkflowImpl implements OrderApprovalWorkflow {
                     pendingClaimSignal = null;
                 }
 
+                // 3. Proses Keputusan (Approve / Reject)
                 if (pendingDecision != null) {
                     if (currentClaim != null && pendingDecision.approverId().equals(currentClaim.approverId())) {
                         break;
@@ -103,13 +118,6 @@ public class OrderApprovalWorkflowImpl implements OrderApprovalWorkflow {
             pendingDecision = null;
             currentClaim = null;
             currentStepIndex++;
-        }
-
-        // =====================================================================
-        // SELURUH APPROVAL SELESAI -> EKSEKUSI PENCAIRAN DANA (DENGAN RETRY)
-        // =====================================================================
-        if (orderType == OrderType.BUY && request.amount() != null) {
-            activities.disburseFunds(orderId, request.amount());
         }
 
         this.status = Status.APPROVED;
@@ -135,5 +143,11 @@ public class OrderApprovalWorkflowImpl implements OrderApprovalWorkflow {
         String claimedName = currentClaim != null ? currentClaim.approverName() : null;
 
         return new OrderState(orderId, orderType, status, approvalChain, currentStepIndex, waitingFor, claimedId, claimedName, history);
+    }
+
+    @Override
+    public void cancelOrder(String requesterId, String reason) {
+        this.isCancelled = true;
+        this.cancelReason = reason;
     }
 }

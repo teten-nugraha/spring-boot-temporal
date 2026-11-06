@@ -7,7 +7,7 @@ import java.util.List;
 
 public class OrderDto {
     public enum OrderType { IJIN_CUTI, BUY }
-    public enum Status { PENDING, IN_PROGRESS, APPROVED, REJECTED }
+    public enum Status { PENDING, IN_PROGRESS, APPROVED, REJECTED, CANCELLED }
 
     public record CreateRequest(
             String orderId,

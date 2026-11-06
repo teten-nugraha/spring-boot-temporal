@@ -12,6 +12,7 @@ import id.ten.mpv_approval.temporal.OrderApprovalWorkflow;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -179,6 +180,50 @@ public class OrderController {
         return ResponseEntity.ok(Map.of(
                 "message", "Keputusan persetujuan (" + (approved ? "APPROVED" : "REJECTED") + ") berhasil diproses",
                 "approver", approver.getName()
+        ));
+    }
+
+    @PostMapping("/orders/{orderId}/cancel")
+    public ResponseEntity<?> cancelOrder(
+            @PathVariable String orderId,
+            @RequestBody Map<String, String> body) {
+
+        String requesterId = body.get("requesterId");
+        String reason = body.getOrDefault("reason", "Dibatalkan oleh pemohon");
+
+        OrderEntity order = orderRepository.findById(orderId).orElse(null);
+        if (order == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        if (order.getStatus() != Status.IN_PROGRESS && order.getStatus() != Status.PENDING) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Order sudah berstatus " + order.getStatus() + " dan tidak dapat dibatalkan."
+            ));
+        }
+
+        // =========================================================================
+        // PERBAIKAN VALIDASI: Cek kecocokan berdasarkan ID MAUPUN Nama
+        // =========================================================================
+        UserEntity user = userRepository.findById(requesterId).orElse(null);
+        String userName = (user != null) ? user.getName() : "";
+
+        boolean isMatch = order.getRequesterId().equalsIgnoreCase(requesterId)
+                || order.getRequesterId().equalsIgnoreCase(userName);
+
+        if (!isMatch) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "error", "Akses Ditolak! Hanya pemohon (" + order.getRequesterId() + ") yang berhak membatalkan pengajuan ini."
+            ));
+        }
+
+        // Kirim Sinyal Cancel ke Temporal
+        OrderApprovalWorkflow workflow = workflowClient.newWorkflowStub(OrderApprovalWorkflow.class, orderId);
+        workflow.cancelOrder(requesterId, reason);
+
+        return ResponseEntity.ok(Map.of(
+                "message", "Pengajuan #" + orderId + " berhasil dibatalkan oleh pemohon.",
+                "status", "CANCELLED"
         ));
     }
 }
