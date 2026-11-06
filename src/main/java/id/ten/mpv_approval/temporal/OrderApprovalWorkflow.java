@@ -22,4 +22,7 @@ public interface OrderApprovalWorkflow {
     // memungkinkan frontend query state workflow langsung
     @QueryMethod
     OrderState getOrderState();
+
+    @SignalMethod
+    void cancelOrder(String requesterId, String reason);
 }
