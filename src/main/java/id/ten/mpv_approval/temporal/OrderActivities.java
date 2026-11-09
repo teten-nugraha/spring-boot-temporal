@@ -26,7 +26,6 @@ public interface OrderActivities {
     @ActivityMethod
     void finalizeStatus(String orderId, Status status);
 
-    // FITUR SIMULASI RETRY: Integrasi ke Payment Gateway / Core Banking
     @ActivityMethod
-    void disburseFunds(String orderId, BigDecimal amount);
+    void updateProcurementProgress(String orderId, String childWorkflowId, String stage, String notes);
 }

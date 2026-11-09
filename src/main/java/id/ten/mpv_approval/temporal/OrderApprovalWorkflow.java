@@ -15,14 +15,12 @@ public interface OrderApprovalWorkflow {
     @SignalMethod
     void claimOrder(ClaimRequest claim);
 
-    // Menerima aksi approve / reject dari pimpinan
     @SignalMethod
     void submitApproval(ApprovalDecision decision);
 
-    // memungkinkan frontend query state workflow langsung
-    @QueryMethod
-    OrderState getOrderState();
-
     @SignalMethod
     void cancelOrder(String requesterId, String reason);
+
+    @QueryMethod
+    OrderState getOrderState();
 }

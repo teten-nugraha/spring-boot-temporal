@@ -30,6 +30,7 @@ public class ApprovalHistoryEntity {
     private LocalDateTime timestamp = LocalDateTime.now();
 
     public ApprovalHistoryEntity() {}
+
     public ApprovalHistoryEntity(OrderEntity order, String approverId, Role role, boolean approved, String notes) {
         this.order = order;
         this.approverId = approverId;
@@ -38,7 +39,6 @@ public class ApprovalHistoryEntity {
         this.notes = notes;
     }
 
-    // Getters and Setters
     public Long getId() { return id; }
     public OrderEntity getOrder() { return order; }
     public void setOrder(OrderEntity order) { this.order = order; }

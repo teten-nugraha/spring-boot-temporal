@@ -6,11 +6,13 @@ import io.temporal.workflow.Workflow;
 
 import java.time.Duration;
 
-public class AutoReleaseWorkflowImpl implements AutoReleaseWorkflow{
+public class AutoReleaseWorkflowImpl implements AutoReleaseWorkflow {
 
     private final AutoReleaseActivities activities = Workflow.newActivityStub(
             AutoReleaseActivities.class,
-            ActivityOptions.newBuilder().setStartToCloseTimeout(Duration.ofSeconds(10)).build()
+            ActivityOptions.newBuilder()
+                    .setStartToCloseTimeout(Duration.ofSeconds(10))
+                    .build()
     );
 
     @Override

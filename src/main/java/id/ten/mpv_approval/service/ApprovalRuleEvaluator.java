@@ -1,6 +1,6 @@
 package id.ten.mpv_approval.service;
 
-import id.ten.mpv_approval.dto.OrderDto;
+import id.ten.mpv_approval.dto.OrderDto.*;
 import id.ten.mpv_approval.model.Role;
 
 import java.math.BigDecimal;
@@ -9,21 +9,15 @@ import java.util.List;
 
 public class ApprovalRuleEvaluator {
 
-    public static List<Role> determineRequiredApprovals(OrderDto.OrderType type, Integer days, BigDecimal amount) {
+    public static List<Role> determineRequiredApprovals(OrderType type, Integer days, BigDecimal amount) {
         List<Role> chain = new ArrayList<>();
 
-        if (type == OrderDto.OrderType.IJIN_CUTI) {
-            // Rules:
-            // Cuti = 1 hari -> Auto approve (chain kosong)
-            // Cuti > 2 hari -> Butuh MANAGER
+        if (type == OrderType.IJIN_CUTI) {
             if (days != null && days > 2) {
                 chain.add(Role.MANAGER);
             }
-        } else if (type == OrderDto.OrderType.BUY) {
-            // Rules BUY:
-            // <= 1jt -> FINANCE
-            // > 1jt s/d 10jt -> FINANCE -> DIRECTOR
-            // > 10jt s/d 100jt -> FINANCE -> DIRECTOR -> CEO
+        }
+        else if (type == OrderType.BUY) {
             BigDecimal val = amount != null ? amount : BigDecimal.ZERO;
             BigDecimal oneMillion = new BigDecimal("1000000");
             BigDecimal tenMillion = new BigDecimal("10000000");
@@ -40,6 +34,12 @@ public class ApprovalRuleEvaluator {
                 chain.add(Role.CEO);
             }
         }
+        else if (type == OrderType.BUY_LAMBORGHINI) {
+            // Parent Workflow butuh FINANCE lalu CEO
+            chain.add(Role.FINANCE);
+            chain.add(Role.CEO);
+        }
+
         return chain;
     }
 }

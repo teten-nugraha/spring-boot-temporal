@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 public class OrderDto {
-    public enum OrderType { IJIN_CUTI, BUY }
+    public enum OrderType { IJIN_CUTI, BUY, BUY_LAMBORGHINI }
     public enum Status { PENDING, IN_PROGRESS, APPROVED, REJECTED, CANCELLED }
 
     public record CreateRequest(
@@ -22,7 +22,7 @@ public class OrderDto {
             String approverId,
             String approverName,
             Role role,
-            boolean release // true jika ingin membatalkan/melepas klaim
+            boolean release
     ) {}
 
     public record ApprovalDecision(

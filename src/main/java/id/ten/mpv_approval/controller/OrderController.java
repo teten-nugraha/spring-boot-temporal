@@ -5,9 +5,11 @@ import id.ten.mpv_approval.dto.OrderDto.*;
 import id.ten.mpv_approval.entity.OrderEntity;
 import id.ten.mpv_approval.entity.UserEntity;
 import id.ten.mpv_approval.model.DummyData;
+import id.ten.mpv_approval.model.Role;
 import id.ten.mpv_approval.model.User;
 import id.ten.mpv_approval.repository.OrderRepository;
 import id.ten.mpv_approval.repository.UserRepository;
+import id.ten.mpv_approval.temporal.DualDirectorChildWorkflow;
 import id.ten.mpv_approval.temporal.OrderApprovalWorkflow;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
@@ -74,7 +76,6 @@ public class OrderController {
         ));
     }
 
-    // 1. ENDPOINT: PICK ME (Claim Order)
     @PostMapping("/orders/{orderId}/claim")
     public ResponseEntity<?> claimOrder(
             @PathVariable String orderId,
@@ -87,37 +88,31 @@ public class OrderController {
         }
 
         OrderEntity order = orderRepository.findById(orderId).orElse(null);
-        if (order == null) {
-            return ResponseEntity.notFound().build();
-        }
+        if (order == null) return ResponseEntity.notFound().build();
 
-        // Validasi: Apakah role user cocok dengan tahapan saat ini?
         if (order.getWaitingForRole() != user.getRole()) {
             return ResponseEntity.badRequest().body(Map.of(
-                    "error", "Role Anda (" + user.getRole() + ") tidak sesuai dengan tahapan yang ditunggu (" + order.getWaitingForRole() + ")"
+                    "error", "Role Anda (" + user.getRole() + ") tidak sesuai dengan tahapan (" + order.getWaitingForRole() + ")"
             ));
         }
 
-        // Validasi: Apakah sudah di-claim oleh orang lain?
         if (order.getClaimedById() != null && !order.getClaimedById().equals(user.getId())) {
             return ResponseEntity.badRequest().body(Map.of(
                     "error", "Order ini sudah di-claim oleh " + order.getClaimedByName()
             ));
         }
 
-        // Kirim sinyal klaim ke Temporal Workflow
         OrderApprovalWorkflow workflow = workflowClient.newWorkflowStub(OrderApprovalWorkflow.class, orderId);
         ClaimRequest claim = new ClaimRequest(user.getId(), user.getName(), user.getRole(), false);
         workflow.claimOrder(claim);
 
         return ResponseEntity.ok(Map.of(
-                "message", "Order berhasil di-claim (Pick Me) oleh " + user.getName(),
+                "message", "Order berhasil di-claim oleh " + user.getName(),
                 "claimedById", user.getId(),
                 "claimedByName", user.getName()
         ));
     }
 
-    // 2. ENDPOINT: RELEASE CLAIM (Batal Klaim agar orang lain di role yang sama bisa ambil)
     @PostMapping("/orders/{orderId}/release")
     public ResponseEntity<?> releaseClaim(
             @PathVariable String orderId,
@@ -139,15 +134,18 @@ public class OrderController {
         return ResponseEntity.ok(Map.of("message", "Klaim order berhasil dilepaskan"));
     }
 
-    // 3. ENDPOINT: DECISION (Validasi Wajib Pick Me Terlebih Dahulu)
     @PostMapping("/orders/{orderId}/decision")
     public ResponseEntity<?> submitDecision(
             @PathVariable String orderId,
             @RequestBody Map<String, Object> body) {
 
         String approverId = (String) body.get("approverId");
-        boolean approved = (Boolean) body.get("approved");
+        Boolean approved = (Boolean) body.get("approved");
         String notes = (String) body.getOrDefault("notes", "");
+
+        if (approverId == null || approved == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Parameter 'approverId' dan 'approved' wajib dikirim."));
+        }
 
         UserEntity approver = userRepository.findById(approverId).orElse(null);
         if (approver == null) {
@@ -155,24 +153,20 @@ public class OrderController {
         }
 
         OrderEntity order = orderRepository.findById(orderId).orElse(null);
-        if (order == null) {
-            return ResponseEntity.notFound().build();
-        }
+        if (order == null) return ResponseEntity.notFound().build();
 
-        // VALIDASI KRUSIAL: Order harus sudah di-Pick Me oleh user yang bersangkutan
         if (order.getClaimedById() == null) {
             return ResponseEntity.badRequest().body(Map.of(
-                    "error", "Order belum di-Pick Me! Anda harus klik tombol 'Pick Me' terlebih dahulu sebelum mengambil keputusan."
+                    "error", "Order belum di-Pick Me! Anda harus klik tombol 'Pick Me' terlebih dahulu."
             ));
         }
 
         if (!order.getClaimedById().equals(approver.getId())) {
             return ResponseEntity.badRequest().body(Map.of(
-                    "error", "Order ini sedang dikunci/di-claim oleh " + order.getClaimedByName() + ". Anda tidak dapat memprosesnya."
+                    "error", "Order ini sedang dikunci oleh " + order.getClaimedByName() + ". Anda tidak dapat memprosesnya."
             ));
         }
 
-        // Kirim keputusan ke Temporal Workflow
         OrderApprovalWorkflow workflow = workflowClient.newWorkflowStub(OrderApprovalWorkflow.class, orderId);
         ApprovalDecision decision = new ApprovalDecision(approver.getId(), approver.getRole(), approved, notes);
         workflow.submitApproval(decision);
@@ -192,9 +186,7 @@ public class OrderController {
         String reason = body.getOrDefault("reason", "Dibatalkan oleh pemohon");
 
         OrderEntity order = orderRepository.findById(orderId).orElse(null);
-        if (order == null) {
-            return ResponseEntity.notFound().build();
-        }
+        if (order == null) return ResponseEntity.notFound().build();
 
         if (order.getStatus() != Status.IN_PROGRESS && order.getStatus() != Status.PENDING) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -202,9 +194,6 @@ public class OrderController {
             ));
         }
 
-        // =========================================================================
-        // PERBAIKAN VALIDASI: Cek kecocokan berdasarkan ID MAUPUN Nama
-        // =========================================================================
         UserEntity user = userRepository.findById(requesterId).orElse(null);
         String userName = (user != null) ? user.getName() : "";
 
@@ -217,7 +206,6 @@ public class OrderController {
             ));
         }
 
-        // Kirim Sinyal Cancel ke Temporal
         OrderApprovalWorkflow workflow = workflowClient.newWorkflowStub(OrderApprovalWorkflow.class, orderId);
         workflow.cancelOrder(requesterId, reason);
 
@@ -225,5 +213,44 @@ public class OrderController {
                 "message", "Pengajuan #" + orderId + " berhasil dibatalkan oleh pemohon.",
                 "status", "CANCELLED"
         ));
+    }
+
+    @PostMapping("/orders/{orderId}/child-director-approve")
+    public ResponseEntity<?> approveChildByDirector(
+            @PathVariable String orderId,
+            @RequestBody Map<String, Object> body) {
+
+        String approverId = (String) body.get("approverId");
+        Boolean approved = (Boolean) body.get("approved");
+        String notes = (String) body.getOrDefault("notes", "");
+
+        UserEntity user = userRepository.findById(approverId).orElse(null);
+        if (user == null || user.getRole() != Role.DIRECTOR) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Hanya akun dengan role DIRECTOR yang dapat menyetujui tahap ini."));
+        }
+
+        OrderEntity order = orderRepository.findById(orderId).orElse(null);
+        if (order == null) return ResponseEntity.notFound().build();
+
+        String childWorkflowId = (order.getType() == OrderType.BUY_LAMBORGHINI)
+                ? "CHILD-LAMBO-DIR-" + orderId
+                : "CHILD-DIR-" + orderId;
+
+        try {
+            DualDirectorChildWorkflow childWorkflow = workflowClient.newWorkflowStub(
+                    DualDirectorChildWorkflow.class,
+                    childWorkflowId
+            );
+
+            ApprovalDecision decision = new ApprovalDecision(user.getId(), user.getRole(), approved, notes);
+            childWorkflow.submitDirectorApproval(decision);
+
+            return ResponseEntity.ok(Map.of(
+                    "message", "Persetujuan Direktur (" + user.getName() + ") berhasil diproses ke Child Workflow.",
+                    "childWorkflowId", childWorkflowId
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Gagal mengirim ke Child Workflow: " + e.getMessage()));
+        }
     }
 }

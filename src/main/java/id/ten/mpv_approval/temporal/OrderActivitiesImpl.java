@@ -20,8 +20,6 @@ import java.util.List;
 @Component
 public class OrderActivitiesImpl implements OrderActivities {
 
-    private static final Logger log = LoggerFactory.getLogger(OrderActivitiesImpl.class);
-
     private final OrderRepository orderRepository;
     private final ApprovalHistoryRepository historyRepository;
 
@@ -54,7 +52,7 @@ public class OrderActivitiesImpl implements OrderActivities {
         orderRepository.findById(orderId).ifPresent(order -> {
             order.setCurrentStepIndex(currentStepIndex);
             order.setWaitingForRole(waitingForRole);
-            order.setClaimedById(null);      // Reset klaim saat naik jenjang baru
+            order.setClaimedById(null);
             order.setClaimedByName(null);
             order.setStatus(Status.IN_PROGRESS);
             order.setUpdatedAt(LocalDateTime.now());
@@ -106,23 +104,13 @@ public class OrderActivitiesImpl implements OrderActivities {
 
     @Override
     @Transactional
-    public void disburseFunds(String orderId, BigDecimal amount) {
-        // Ambil info percobaan ke berapa dari engine Temporal
-        int currentAttempt = Activity.getExecutionContext().getInfo().getAttempt();
-
-        log.warn(">>> [SIMULASI RETRY] Mencoba pencairan dana Order #{} (Rp {}) - Attempt ke-{}",
-                orderId, amount, currentAttempt);
-
-        // Simulasi: Percobaan ke-1 dan ke-2 SENGAJA DIGAGALKAN
-        if (currentAttempt < 3) {
-            String errorMsg = "Connection Timeout: Server Core Banking / Payment Gateway tidak merespons (HTTP 504) pada Attempt #" + currentAttempt;
-            log.error(">>> [GAGAL] {}", errorMsg);
-
-            // Melemparkan ApplicationFailure agar Temporal otomatis me-retry
-            throw ApplicationFailure.newFailure(errorMsg, "GATEWAY_TIMEOUT_ERROR");
-        }
-
-        // Percobaan ke-3 BERHASIL!
-        log.info(">>> [SUKSES] Pencairan dana Order #{} berhasil diproses pada Attempt ke-{}!", orderId, currentAttempt);
+    public void updateProcurementProgress(String orderId, String childWorkflowId, String stage, String notes) {
+        orderRepository.findById(orderId).ifPresent(order -> {
+            order.setProcurementWorkflowId(childWorkflowId);
+            order.setProcurementStage(stage);
+            order.setProcurementNotes(notes);
+            order.setUpdatedAt(LocalDateTime.now());
+            orderRepository.save(order);
+        });
     }
 }

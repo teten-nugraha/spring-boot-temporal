@@ -4,6 +4,5 @@ import io.temporal.activity.ActivityInterface;
 
 @ActivityInterface
 public interface AutoReleaseActivities {
-
     void releaseStaleOrders();
 }

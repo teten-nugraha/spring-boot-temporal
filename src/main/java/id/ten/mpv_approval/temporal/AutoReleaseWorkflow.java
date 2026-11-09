@@ -5,7 +5,6 @@ import io.temporal.workflow.WorkflowMethod;
 
 @WorkflowInterface
 public interface AutoReleaseWorkflow {
-
     @WorkflowMethod
     void run();
 }

@@ -14,6 +14,7 @@ import java.util.List;
 public class OrderEntity {
     @Id
     private String orderId;
+
     private String requesterId;
 
     @Enumerated(EnumType.STRING)
@@ -33,9 +34,13 @@ public class OrderEntity {
     @Enumerated(EnumType.STRING)
     private Role waitingForRole;
 
-    // Field untuk fitur Pick Me
     private String claimedById;
     private String claimedByName;
+
+    // Field Child Workflow
+    private String procurementWorkflowId;
+    private String procurementStage;
+    private String procurementNotes;
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "order_approval_chains", joinColumns = @JoinColumn(name = "order_id"))
@@ -52,7 +57,6 @@ public class OrderEntity {
 
     public OrderEntity() {}
 
-    // Getters and Setters
     public String getOrderId() { return orderId; }
     public void setOrderId(String orderId) { this.orderId = orderId; }
     public String getRequesterId() { return requesterId; }
@@ -71,12 +75,16 @@ public class OrderEntity {
     public void setCurrentStepIndex(int currentStepIndex) { this.currentStepIndex = currentStepIndex; }
     public Role getWaitingForRole() { return waitingForRole; }
     public void setWaitingForRole(Role waitingForRole) { this.waitingForRole = waitingForRole; }
-
     public String getClaimedById() { return claimedById; }
     public void setClaimedById(String claimedById) { this.claimedById = claimedById; }
     public String getClaimedByName() { return claimedByName; }
     public void setClaimedByName(String claimedByName) { this.claimedByName = claimedByName; }
-
+    public String getProcurementWorkflowId() { return procurementWorkflowId; }
+    public void setProcurementWorkflowId(String procurementWorkflowId) { this.procurementWorkflowId = procurementWorkflowId; }
+    public String getProcurementStage() { return procurementStage; }
+    public void setProcurementStage(String procurementStage) { this.procurementStage = procurementStage; }
+    public String getProcurementNotes() { return procurementNotes; }
+    public void setProcurementNotes(String procurementNotes) { this.procurementNotes = procurementNotes; }
     public List<Role> getApprovalChain() { return approvalChain; }
     public void setApprovalChain(List<Role> approvalChain) { this.approvalChain = approvalChain; }
     public List<ApprovalHistoryEntity> getHistory() { return history; }

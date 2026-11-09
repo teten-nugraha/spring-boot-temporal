@@ -4,7 +4,9 @@ import id.ten.mpv_approval.dto.OrderDto.*;
 import id.ten.mpv_approval.model.Role;
 import id.ten.mpv_approval.service.ApprovalRuleEvaluator;
 import io.temporal.activity.ActivityOptions;
+import io.temporal.api.enums.v1.ParentClosePolicy;
 import io.temporal.common.RetryOptions;
+import io.temporal.workflow.ChildWorkflowOptions;
 import io.temporal.workflow.Workflow;
 
 import java.time.Duration;
@@ -13,14 +15,14 @@ import java.util.List;
 
 public class OrderApprovalWorkflowImpl implements OrderApprovalWorkflow {
 
-    // 1. Definisikan Kebijakan Retry (RetryOptions)
+    // 1. Definisikan retryOptions terlebih dahulu
     private final RetryOptions retryOptions = RetryOptions.newBuilder()
-            .setInitialInterval(Duration.ofSeconds(10))   // Tunggu 4 detik sebelum coba lagi pertama kali
-            .setBackoffCoefficient(1.0)                 // Kelipatan jeda waktu (4s -> 8s -> 16s)
-            .setMaximumInterval(Duration.ofSeconds(30))  // Jeda maksimal antar percobaan
-            .setMaximumAttempts(5)                      // Batas maksimal coba 5x
+            .setInitialInterval(Duration.ofSeconds(10))
+            .setBackoffCoefficient(1.0)
+            .setMaximumAttempts(5)
             .build();
 
+    // 2. Hubungkan ke Activity Stub
     private final OrderActivities activities = Workflow.newActivityStub(
             OrderActivities.class,
             ActivityOptions.newBuilder()
@@ -36,12 +38,10 @@ public class OrderApprovalWorkflowImpl implements OrderApprovalWorkflow {
     private int currentStepIndex = 0;
     private final List<ApprovalDecision> history = new ArrayList<>();
 
-    // State klaim
     private ClaimRequest currentClaim = null;
     private ClaimRequest pendingClaimSignal = null;
     private ApprovalDecision pendingDecision = null;
 
-    // Flag pembatalan
     private boolean isCancelled = false;
     private String cancelReason = "";
 
@@ -72,18 +72,15 @@ public class OrderApprovalWorkflowImpl implements OrderApprovalWorkflow {
 
             activities.updateWaitingState(orderId, currentStepIndex, targetRole);
 
-            // Loop menunggu aksi Pick Me, Decision, atau Pembatalan (Cancel)
             while (true) {
                 Workflow.await(() -> pendingClaimSignal != null || pendingDecision != null || isCancelled);
 
-                // 1. CEK JIKA ADA PEMBATALAN DARI REQUESTOR
                 if (isCancelled) {
                     this.status = Status.CANCELLED;
                     activities.finalizeStatus(orderId, Status.CANCELLED);
-                    return; // Menghentikan eksekusi workflow seketika
+                    return;
                 }
 
-                // 2. Proses Sinyal Pick Me / Release
                 if (pendingClaimSignal != null) {
                     if (pendingClaimSignal.role() == targetRole) {
                         if (pendingClaimSignal.release()) {
@@ -97,7 +94,6 @@ public class OrderApprovalWorkflowImpl implements OrderApprovalWorkflow {
                     pendingClaimSignal = null;
                 }
 
-                // 3. Proses Keputusan (Approve / Reject)
                 if (pendingDecision != null) {
                     if (currentClaim != null && pendingDecision.approverId().equals(currentClaim.approverId())) {
                         break;
@@ -120,6 +116,30 @@ public class OrderApprovalWorkflowImpl implements OrderApprovalWorkflow {
             currentStepIndex++;
         }
 
+        // =========================================================================
+        // EKSEKUSI CHILD WORKFLOW: KHUSUS TIPE BUY_LAMBORGHINI (2 DIREKTUR BERBEDA)
+        // =========================================================================
+        if (orderType == OrderType.BUY_LAMBORGHINI) {
+            String childWorkflowId = "CHILD-LAMBO-DIR-" + orderId;
+
+            DualDirectorChildWorkflow childDirectorWorkflow = Workflow.newChildWorkflowStub(
+                    DualDirectorChildWorkflow.class,
+                    ChildWorkflowOptions.newBuilder()
+                            .setWorkflowId(childWorkflowId)
+                            .setParentClosePolicy(ParentClosePolicy.PARENT_CLOSE_POLICY_REQUEST_CANCEL)
+                            .build()
+            );
+
+            // Blocking call: Parent membeku sampai Child Workflow disetujui 2 Direktur
+            boolean isChildApproved = childDirectorWorkflow.executeDualDirectorApproval(orderId, request.amount());
+
+            if (!isChildApproved) {
+                this.status = Status.REJECTED;
+                activities.finalizeStatus(orderId, Status.REJECTED);
+                return;
+            }
+        }
+
         this.status = Status.APPROVED;
         activities.finalizeStatus(orderId, Status.APPROVED);
     }
@@ -135,6 +155,12 @@ public class OrderApprovalWorkflowImpl implements OrderApprovalWorkflow {
     }
 
     @Override
+    public void cancelOrder(String requesterId, String reason) {
+        this.isCancelled = true;
+        this.cancelReason = reason;
+    }
+
+    @Override
     public OrderState getOrderState() {
         Role waitingFor = (status == Status.IN_PROGRESS && currentStepIndex < approvalChain.size())
                 ? approvalChain.get(currentStepIndex)
@@ -143,11 +169,5 @@ public class OrderApprovalWorkflowImpl implements OrderApprovalWorkflow {
         String claimedName = currentClaim != null ? currentClaim.approverName() : null;
 
         return new OrderState(orderId, orderType, status, approvalChain, currentStepIndex, waitingFor, claimedId, claimedName, history);
-    }
-
-    @Override
-    public void cancelOrder(String requesterId, String reason) {
-        this.isCancelled = true;
-        this.cancelReason = reason;
     }
 }
